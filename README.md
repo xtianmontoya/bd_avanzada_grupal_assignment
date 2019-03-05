@@ -2,7 +2,7 @@
 ### Trabajo grupal 1
 | Asignatura        | Valor           | Fecha  |
 | ------------- |:-------------:| -----:|
-| Adminitración de base de datos avanzada      | 20% |  **Abril/15/2019** |
+| Adminitración de base de datos avanzada      | 20% |  **Abril/25/2019** |
 
 El propósito de este trabajo es implementar un modelo de base de datos con su respectiva normalización, de acuerdo a los requerimientos del cliente.
 **Importante:**
@@ -11,9 +11,6 @@ El propósito de este trabajo es implementar un modelo de base de datos con su r
 3. Clonar el proyecto en sus respectivas máquinas.
 4. Crear una carpeta llamada **Assignment 1** y dentro de ella colocar todo lo requerido para la entrega del trabajo.
 5. El repositorio deberá tener:
-    * f
-    * d
-    * f
 6. Cada integrante **deberá tener al menos un commit** resolviendo diferentes partes del taller. En caso de que alguno de los integrantes no lo tenga, se rebajarán 2 unidades sobre la nota definitiva del taller de dicho integrante.
 ---
 ### To do
