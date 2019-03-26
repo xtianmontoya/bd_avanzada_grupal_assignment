@@ -2,7 +2,7 @@
 ### Trabajo grupal 1
 | Asignatura        | Valor           | Fecha  |
 | ------------- |:-------------:| -----:|
-| Adminitración de base de datos avanzada      | 20% |  **Abril/25/2019** |
+| Adminitración de base de datos avanzada      | 10% |  **Abril/25/2019** |
 
 El propósito de este trabajo es implementar un modelo de base de datos con su respectiva normalización, de acuerdo a los requerimientos del cliente.
 **Importante:**
