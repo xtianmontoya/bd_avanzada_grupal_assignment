@@ -1,0 +1,690 @@
+--2.Crear una vista llamada "plan_mantenimiento_detallado" el cuál deberá mostrar que cosas se realizan en ese plan de 
+--mantenimiento. La idea es invocarlo de esta manera "select * from plan_mantenimiento_detallado where kilometraje = 5000" 
+--(Ya usted decide si quiere crear una columna numérica o si quiere manejarlo 
+--usando LIKE en el campo del nombre del mantenimiento)
+
+
+create or replace view plan_mantenimiento_detallado as
+
+select KILOMETROS,DESCRIPCION from ITEMS_MANTO;
+
+select * from plan_mantenimiento_detallado where kilometros like (5000);
+--------------------------------------------------------------------------------
+--3. Crear un procedimiento almacenado llamado "Programar_mantenimiento" el cuál debe recibir el id de un vehículo.
+--El procedimiento deberá calcular cuántos kilómetros faltan para el próximo mantenimiento, 
+--si faltan menos de 200 kilómetros deberá programar el mantenimiento con fecha prevista de mantenimiento 2 dias 
+--después de la fecha en la cual se invoque el procedimiento el mantenimiento y debera tener sus respectivos items 
+--con estado pendiente. El procedimiento deberá tener una excepción si el id que se pase como parámetro es negativo 
+--o igual a cero. El mantenimiento debe hacerse en el centro de recibo que está asignado para ese vehículo y deberá 
+--asignar un mecánico del mismo lugar. Ejemplo: Un vehículo tiene 14900 km y se invoca el procedimiento, deberá crear y 
+--programar el siguiente mantenimiento que es de 15.000km con todos sus items en estado pendiente.
+
+
+CREATE OR REPLACE PROCEDURE Programar_mantenimiento (vehiculo integer, kilometraje integer) IS
+id_vehiculo integer := vehiculo;
+id_mantenimiento MANTENIMIENTOS.ID_MANTENIMIENTO%type;
+km_vehiculo integer;
+manto_proximo integer;
+diferencia integer;
+centro_recibo integer;
+empleado integer;
+programacion_manto integer;
+proximo integer;
+BEGIN
+id_mantenimiento:= BuscarIDManto(id_vehiculo);
+
+if id_mantenimiento is null then
+  
+dbms_output.put_line('se programarà el mantenimiento inicial correspondiente a 5000 km');
+     ---funcion buscar el centro de recibo de un vehiculo y retorna----
+    centro_recibo:=Buscar_centro_recibo(id_vehiculo);
+    --funcion busca el empleado mecanico que se asocie al centro recibo---
+     empleado:=findEmpleado(centro_recibo);
+    ---procedimiento inserta programacion mantenimiento del vehiculo-----
+    insertar_Programacion_mantos(id_vehiculo,empleado,1);
+    programacion_manto := Ultimo_ID_Programacion;
+    detalle_programacion(1,programacion_manto);
+    dbms_output.put_line('se agenda programacion mantenimiento para el vehiculo con id '||id_vehiculo);
+
+---
+else
+dbms_output.put_line('el valor es id_manto es '||id_mantenimiento);
+--km_vehiculo := Buscar_km_vehiculo(id_vehiculo);
+km_vehiculo := kilometraje;
+proximo:=Buscar_proximo_manto(id_mantenimiento);
+
+if proximo > 0 then
+ 
+manto_proximo:=convertir_mantenimiento_entero(proximo);
+dbms_output.put_line('el kilometraje actual es '||km_vehiculo);
+dbms_output.put_line('el kilometraje proximo es '||manto_proximo);
+diferencia := manto_proximo - km_vehiculo;
+if diferencia < 200 then
+    ---funcion buscar el centro de recibo de un vehiculo y retorna----
+    centro_recibo:=Buscar_centro_recibo(id_vehiculo);
+    --funcion busca el empleado mecanico que se asocie al centro recibo---
+    empleado:=findEmpleado(centro_recibo);
+      
+    ---procedimiento inserta programacion mantenimiento del vehiculo-----
+    insertar_Programacion_mantos(id_vehiculo,empleado,id_mantenimiento+1);
+    ---me retorna de la secuencia el ultimo valor de la programacion insertada
+     programacion_manto := Ultimo_ID_Programacion;
+    detalle_programacion(id_mantenimiento+1,programacion_manto);
+    dbms_output.put_line('se agenda programacion mantenimiento para el vehiculo con id '||id_vehiculo);
+    
+    else
+    
+    dbms_output.put_line('El vehiculo aun le faltan '||diferencia || 'para su proximo mantenimiento');
+    
+end if;
+
+else
+    dbms_output.put_line('El sistema no tiene creados mas planes para aplicarle al vehiculo');
+end if;
+end if;
+END;
+
+-----------------------------------------------------------------------
+
+CREATE OR REPLACE PROCEDURE detalle_programacion (mt integer,programacion in integer) IS
+
+ id_detalle detalles_manto.id_detalle_manto%TYPE;
+ 
+
+
+CURSOR items_plan IS select d.ID_DETALLE_MANTO from DETALLES_MANTO d INNER JOIN 
+ITEMS_MANTO i on i.ID_ITEM=d.ID_ITEM where d.ID_MANTO=mt;
+ 
+ BEGIN 
+   OPEN items_plan;
+   LOOP
+   FETCH items_plan INTO id_detalle;
+   EXIT WHEN items_plan%notfound;
+        ---procedimiento insertar detalles_programacion---
+         dbms_output.put_line('programacion '||programacion);
+         dbms_output.put_line('id detalle mantenimiento '||id_detalle);
+        insert_Detalle_programacion(programacion,id_detalle);
+        
+     END LOOP;
+      CLOSE items_plan;
+    EXCEPTION 
+     WHEN NO_DATA_FOUND THEN 
+        DBMS_OUTPUT.PUT_line('No se encontrò ningun detalle de asociado al id de mantenimiento ingresado');
+     WHEN OTHERS THEN
+      DBMS_OUTPUT.PUT_line('Error no se pudo insertar el registro');
+ END; 
+
+ ---funcion para encontrar id empleado----------
+create or replace function findEmpleado (c integer)
+RETURN INTEGER IS
+empleado integer;
+
+BEGIN
+
+SELECT emp.ID_EMPLEADO INTO empleado FROM EMPLEADOS emp 
+WHERE emp.CENTRO_RECIBO =c and emp.CARGO='Mecanico';
+  RETURN empleado;
+END;
+
+ ----funcion para encontrar id_mantenimiento----
+create or replace function findManto (c varchar)
+RETURN integer IS
+mantenimientos integer;
+
+BEGIN
+select ID_MANTENIMIENTO INTO mantenimientos from MANTENIMIENTOS 
+where MANTENIMIENTO like(c);
+  RETURN mantenimientos;
+END;
+--------------------------------------------------------------
+
+ create sequence sec_programacion_mantos
+  start with 1
+  increment by 1
+  maxvalue 9999999
+  minvalue 1;
+ ---------------------------------------
+  create sequence sec_detalle_programacion
+  start with 1
+  increment by 1
+  maxvalue 999999999
+  minvalue 1;
+ 
+ ---------------------------------------
+  create sequence sec_tarifas
+  start with 1
+  increment by 1
+  maxvalue 999999999
+  minvalue 1;
+  
+--------------------insertar programacion mantos------------------------------------------ 
+ 
+ create or replace procedure insertar_Programacion_mantos
+  (id_carro in integer,id_emple in integer, id_manto in integer)
+ as
+ begin
+ 
+  insert into PROGRAMACION_MANTOS values (sec_programacion_mantos.nextval,id_carro,
+  (select sysdate + 2 from dual),id_emple,id_manto);
+   EXCEPTION
+     WHEN OTHERS THEN
+   DBMS_OUTPUT.PUT_line('Error de inserciòn en la base de datos para detalles de programacion');
+ end;
+ ----------------------buscar ID del ultimo mantenimiento---------------------------------------------------
+ create or replace function BuscarIDManto (vehiculo integer)
+RETURN integer IS
+mantenimientos integer :=0;
+
+BEGIN
+select MAX(ID_MANTO) into mantenimientos from PROGRAMACION_MANTOS where ID_VEHICULO=vehiculo;
+return mantenimientos;
+EXCEPTION
+WHEN no_data_found THEN
+ mantenimientos := -1;
+END;
+ 
+ 
+ 
+ -------------------------convertir mantenimiento a dato entero---------------------------------------------
+create or replace function convertir_mantenimiento_entero(id_manto integer)
+RETURN number IS
+ numero MANTENIMIENTOS.mantenimiento%TYPE;
+ valor number;
+ diferencia number := 0;
+BEGIN
+  select REGEXP_SUBSTR(mantenimiento, '\d+.\d+') into numero from mantenimientos where id_mantenimiento = id_manto;
+  dbms_output.put_line('VAlor: '|| to_number(replace(numero, '.', '')));
+  valor := to_number(replace(numero, '.', ''));
+  
+  return valor;
+  
+END;
+
+--------------------------buscar km del vehiculo-----------------------------------------------
+ create or replace function Buscar_km_vehiculo (vehiculo integer)
+RETURN integer IS
+km integer :=0;
+
+BEGIN
+select KILOMETRAJE into km from VEHICULOS where ID_VEHICULO=vehiculo;
+return km;
+
+END;
+  
+  execute insert_Detalle_programacion(41,25);
+  
+CREATE OR REPLACE PROCEDURE insert_Detalle_programacion 
+(id_programacion integer, id_detalle_manto integer)as
+
+BEGIN
+
+insert into detalles_programacion values(sec_detalle_programacion.nextval,id_programacion,id_detalle_manto,'sin observaciones','pendiente');
+
+EXCEPTION
+WHEN OTHERS THEN
+DBMS_OUTPUT.PUT_line('Error de inserciòn en la base de datos para detalles de programacion');
+END;
+  
+---------------------buscar el empleado mecanico---------------------------------------------------------
+ ---funcion para encontrar id empleado----------
+create or replace function findEmpleado (c integer)
+RETURN INTEGER IS
+empleado integer;
+
+BEGIN
+
+SELECT emp.ID_EMPLEADO INTO empleado FROM EMPLEADOS emp 
+WHERE emp.CENTRO_RECIBO =c and emp.CARGO='Mecanico';
+  RETURN empleado;
+END;
+
+ ----------------funcion para encontrar id centro recibo--------------------------
+create or replace function Buscar_centro_recibo (vehiculo integer)
+RETURN INTEGER IS
+centro_recibo integer;
+
+BEGIN
+
+SELECT c.id_centro_recibo INTO centro_recibo FROM vehiculos v inner join centros_recibo c on c.ID_VEHICULO=v.ID_VEHICULO
+WHERE  v.ID_VEHICULO=vehiculo;
+  RETURN centro_recibo;
+END;  
+
+-----------------buscar proximo mantenimiento------------------------------------------------------------------------------------------------
+  create or replace function Buscar_proximo_manto (manto integer)
+RETURN INTEGER IS
+manto_proximo integer;
+manto_p integer := manto + 1;
+BEGIN
+
+SELECT id_mantenimiento into manto_proximo from mantenimientos where ID_MANTENIMIENTO= manto_p;
+ RETURN manto_proximo;
+ 
+ EXCEPTION
+ WHEN OTHERS THEN
+  manto_proximo := -1;
+  return manto_proximo;
+END;
+
+----------------------------funcion retornar la ultima programacion creada----
+create or replace function Ultimo_ID_Programacion
+RETURN INTEGER IS
+valor integer;
+BEGIN
+
+select MAX(ID_PROGRAMACION)INTO valor FROM PROGRAMACION_MANTOS;
+
+return valor;
+END;
+------------------------------------------------------------
+
+--4 .Crear un trigger sobre la tabla de los vehículos, cuando cambie 
+--el kilometraje de vehículo deberá invocar el procedimiento "Programar_mantenimiento"
+
+
+CREATE OR REPLACE PROCEDURE Programar_mantenimiento_Trigger (vehiculo integer, kilometraje integer,centro_recibo_v integer) IS
+id_vehiculo integer := vehiculo;
+id_mantenimiento MANTENIMIENTOS.ID_MANTENIMIENTO%type;
+km_vehiculo integer;
+manto_proximo integer;
+diferencia integer;
+centro_recibo integer;
+empleado integer;
+programacion_manto integer;
+proximo integer;
+BEGIN
+id_mantenimiento:= BuscarIDManto(id_vehiculo);
+
+if id_mantenimiento is null then
+  
+dbms_output.put_line('se programarà el mantenimiento inicial correspondiente a 5000 km');
+     ---funcion buscar el centro de recibo de un vehiculo y retorna----
+    centro_recibo:=centro_recibo_v;
+    --Buscar_centro_recibo(id_vehiculo);
+    --funcion busca el empleado mecanico que se asocie al centro recibo---
+     empleado:=findEmpleado(centro_recibo);
+    ---procedimiento inserta programacion mantenimiento del vehiculo-----
+    insertar_Programacion_mantos(id_vehiculo,empleado,1);
+    programacion_manto := Ultimo_ID_Programacion;
+    detalle_programacion(1,programacion_manto);
+    dbms_output.put_line('se agenda programacion mantenimiento para el vehiculo con id '||id_vehiculo);
+
+---
+else
+dbms_output.put_line('el valor es id_manto es '||id_mantenimiento);
+--km_vehiculo := Buscar_km_vehiculo(id_vehiculo);
+km_vehiculo := kilometraje;
+proximo:=Buscar_proximo_manto(id_mantenimiento);
+
+if proximo > 0 then
+ 
+manto_proximo:=convertir_mantenimiento_entero(proximo);
+dbms_output.put_line('el kilometraje actual es '||km_vehiculo);
+dbms_output.put_line('el kilometraje proximo es '||manto_proximo);
+diferencia := manto_proximo - km_vehiculo;
+if diferencia < 200 then
+    ---funcion buscar el centro de recibo de un vehiculo y retorna----
+    centro_recibo:=centro_recibo_v;
+    --Buscar_centro_recibo(id_vehiculo);
+    --funcion busca el empleado mecanico que se asocie al centro recibo---
+    empleado:=findEmpleado(centro_recibo);
+      
+    ---procedimiento inserta programacion mantenimiento del vehiculo-----
+    insertar_Programacion_mantos(id_vehiculo,empleado,id_mantenimiento+1);
+    ---me retorna de la secuencia el ultimo valor de la programacion insertada
+     programacion_manto := Ultimo_ID_Programacion;
+    detalle_programacion(id_mantenimiento+1,programacion_manto);
+    dbms_output.put_line('se agenda programacion mantenimiento para el vehiculo con id '||id_vehiculo);
+    
+    else
+    
+    dbms_output.put_line('El vehiculo aun le faltan '||diferencia || 'para su proximo mantenimiento');
+    
+end if;
+
+else
+    dbms_output.put_line('El sistema no tiene creados mas planes para aplicarle al vehiculo');
+end if;
+end if;
+END;
+
+CREATE OR REPLACE TRIGGER Update_KM_Vehiculo AFTER UPDATE ON VEHICULOS
+FOR EACH ROW
+WHEN(NEW.ID_VEHICULO >0)
+DECLARE
+centro CENTROS_RECIBO.ID_VEHICULO%TYPE;
+ BEGIN 
+  select ID_CENTRO_RECIBO INTO centro from CENTROS_RECIBO where ID_VEHICULO= :NEW.ID_VEHICULO;
+  
+ Programar_mantenimiento_Trigger(:NEW.ID_VEHICULO,:NEW.KILOMETRAJE,centro);
+  
+END;
+
+
+------------------------------------------------------------------------------------------------
+
+
+--7.Crear un procedimiento llamado "calcular_peso_volumetrico", 
+--dicho procedimiento deberá leer todos los registros de la tabla de envíos y 
+--llenar el campo "peso volumen", para esto aplicará la fórmula expuesta en el taller anterior: 
+--se obtiene multiplicando el ancho x el alto x el largo y luego se 
+--multiplica por 400 que es el factor de equivalencia por cada metro cúbico)
+
+
+CREATE OR REPLACE PROCEDURE calcular_peso_volumetrico IS
+
+ id_e ENVIOS.ID%TYPE;
+ ancho ENVIOS.ANCHO_ENVIO%type;
+ alto ENVIOS.ALTO_ENVIO%type;
+ calculo number;
+ 
+
+CURSOR envios_valor IS select id, ancho_envio,alto_envio from envios where id between 1 and 500;
+ 
+ BEGIN 
+   OPEN envios_valor;
+   LOOP
+   FETCH envios_valor INTO id_e,ancho,alto;
+   EXIT WHEN envios_valor%notfound;
+        
+        calculo := ancho * alto * 400;
+        update envios set PESO_VOLUMEN=calculo where ID=id_e;
+        DBMS_OUTPUT.PUT_line('se actualizo el registro de envio '|| id_e); 
+        
+     END LOOP;
+      CLOSE envios_valor;
+    EXCEPTION 
+     WHEN NO_DATA_FOUND THEN 
+        DBMS_OUTPUT.PUT_line('No se encontrò ningun envio');
+     WHEN OTHERS THEN
+      DBMS_OUTPUT.PUT_line('Error no se pudo insertar el registro');
+ END; 
+ 
+ exec calcular_peso_volumetrico;
+ 
+--------------------------------------------------------------------------------------
+
+--5--La junta directiva desea realizar un cotizador de precios de los envíos, para esto es necesario crear una matriz de precios similar 
+--a la que se maneja en la realidad (Ver sección Tarifas de mensajería y paquetes hasta 5 kilos). 
+--Para esto se decide crear una nueva tabla que 
+--tendrá las siguientes columnas: centro_recib_id (Clave foránea con la tabla de centros de recibo), 
+--destino_id (Clave foránea a la tabla códigos postales o ciudades), precio_kilo (decimal).
+--Para llenar esta tabla usted creará una procedimiento llamado "recalcular_tarifas", este procedimiento lo que hará es los siguiente:
+
+--Borrar todos los datos de la tabla donde se guardan los precios.
+--Leer todos los centros de recibo y empezar a recorrerlos uno a uno.
+--Por cada centro de recibo deberá leer todas las ciudades o códigos postales.
+--Deberá generar un decimal aleatorio entre 400 y 1500
+--Luego insertará en la tabla el id del centro de recibo, el id de la ciudad o del código postal y el valor generado.
+
+
+--CREACION TABLA TARIFAS---
+
+CREATE table Tarifas (
+	id INTEGER NOT NULL PRIMARY KEY,
+	id_destino INTEGER NOT NULL,
+  id_centro_recibo INTEGER NOT NULL, 
+  id_precio decimal NOT NULL
+);
+
+ --CREACION CLAVE FORANEA FORANEA TARIFAS-MUNICIPIOS--
+alter table TARIFAS
+  add constraint TARIFAS_MUNICIPIO_FK
+  foreign key (id_destino)
+  references MUNICIPIOS (id_municipio);
+  
+  --CREACION CLAVE FORANEA FORANEA TARIFAS-CENTRO_RECIBO--
+alter table TARIFAS
+  add constraint TARIFAS_CENTRO_RECIBO_FK
+  foreign key (id_centro_recibo)
+  references CENTROS_RECIBO (id_centro_recibo);
+
+---------------------procedimiento almacenado--------------------------------------------
+
+CREATE OR REPLACE PROCEDURE recalcular_tarifas  IS
+
+ id_centro CENTROS_RECIBO.ID_CENTRO_RECIBO%TYPE;
+ municipio MUNICIPIOS.ID_MUNICIPIO%type;
+ calculo NUMBER;
+
+
+CURSOR tarifas IS select c.ID_CENTRO_RECIBO,m.ID_MUNICIPIO from centros_recibo c 
+inner join municipios m on c.ID_MUNICIPIO=m.ID_MUNICIPIO;
+      
+ BEGIN 
+   OPEN tarifas;
+
+   LOOP
+   FETCH tarifas INTO id_centro,municipio;
+   
+ 
+   EXIT WHEN tarifas%notfound;
+        IF tarifas%ROWCOUNT = 1 THEN
+           DELETE FROM TARIFAS;
+           DBMS_OUTPUT.PUT_line('se eliminaron los anteriores registros'); 
+        END IF;
+        
+        calculo := DBMS_RANDOM.VALUE(400,1500);
+        INSERT INTO TARIFAS VALUES(sec_tarifas.nextval,municipio,id_centro,calculo);
+        DBMS_OUTPUT.PUT_line('se creo la tarifa de envio'); 
+        
+     END LOOP;
+      CLOSE tarifas;
+    EXCEPTION 
+     WHEN NO_DATA_FOUND THEN 
+        DBMS_OUTPUT.PUT_line('No se encontrò ningun centro de recibo asociado a un municipio');
+     WHEN OTHERS THEN
+      DBMS_OUTPUT.PUT_line('Error no se pudo insertar el registro');
+ END; 
+ exec recalcular_tarifas;
+
+---------------------------------------------------------------------------------------
+--6--Crear una vista la cual traiga todos los precios por kilo de todas las ciudades destino y 
+--como ciudad origen recibirá un string "Barranquilla, Medellín, Cali". 
+--Es importante recordar que la liquidación de precios solo se hizo teniendo como base las ciudades de cada centro de recibo. 
+--Ejemplo SELECT * FROM PRECIOS WHERE ORIGEN = 'BARRANQUILLA'. (Observe que no se está pasando el id del centro de recibo, 
+--se está pasando la ciudad a la que pertenece el centro de recibo, por ende hay que hacer los JOINS correspondientes para obtener el listado de precios.
+
+CREATE OR REPLACE FORCE  VIEW TARIFA_DESTINO AS 
+select m.NOMBRE as origen,t.ID_DESTINO as ID_Destino,MUNICIPIOS.NOMBRE as destino,t.ID_PRECIO as precio  FROM TARIFAS t inner join CENTROS_RECIBO c on 
+ t.ID_CENTRO_RECIBO = c.ID_CENTRO_RECIBO inner join MUNICIPIOS m on 
+ t.ID_DESTINO=m.ID_MUNICIPIO inner join 
+ MUNICIPIOS on c.ID_MUNICIPIO=m.ID_MUNICIPIO ;
+
+ 
+SELECT * FROM TARIFA_DESTINO WHERE ORIGEN ='Cali';
+
+---------------------------------------------------------------------------------------------------------------------
+
+--8-Crear una función que retornará un decimal, dicha función recibirá las siguientes variables: peso_real, peso_volumen, centro_recibo_origen,
+-- ciudad_destino. Dicha función deberá comparar el valor mayor entre peso_real y peso_volumen, 
+--con ese valor deberá buscar el precio por kilo de la ciudad hacia donde se dirige el paquete. Para esto invocará la vista del punto anterior 
+--y el precio deberá multiplicarlo por la cantidad del peso del paquete. Validar con excepciones que los pesos sean mayores a 0 y los 
+--centros de recibo y la ciudad destino no estén en blanco.
+
+
+
+create or replace function Calcular_Tarifa_Peso (peso_real integer, peso_volumen integer, municipio_destino string)
+RETURN integer IS
+ valor number;
+ precio_Tarifa integer;
+ id_ciudad integer;
+ id_centro integer;
+BEGIN
+ select C.ID_MUNICIPIO,C.ID_CENTRO_RECIBO INTO id_ciudad,id_centro  FROM CENTROS_RECIBO C INNER JOIN MUNICIPIOS M ON 
+ M.ID_MUNICIPIO= C.ID_MUNICIPIO WHERE M.NOMBRE=municipio_destino and C.DESCRIPCION like ('Terminal%');
+
+DBMS_OUTPUT.PUT_line('ciudad es: '||id_ciudad);
+DBMS_OUTPUT.PUT_line('centro es: '||id_centro);
+
+SELECT DISTINCT PRECIO INTO precio_Tarifa FROM TARIFA_DESTINO where ID_DESTINO=id_ciudad  and CENTRO_RECIBO= id_centro;
+
+
+ IF peso_real > peso_volumen then
+ 
+   
+   valor := peso_real * precio_Tarifa;
+   DBMS_OUTPUT.PUT_line('VALOR: '||valor);
+   else 
+  valor := peso_volumen * precio_Tarifa;
+  DBMS_OUTPUT.PUT_line('VALOR: '||valor);
+ END IF;
+
+return valor;
+
+ EXCEPTION 
+ WHEN NO_DATA_FOUND THEN 
+        DBMS_OUTPUT.PUT_line('No se encontrò un registro asociado a un centro de destino');
+        return -1;
+     WHEN OTHERS THEN
+      DBMS_OUTPUT.PUT_line('Error no se pudo calcular el registro');
+     return -2;
+END;
+
+
+
+select Calcular_Tarifa_Peso(40,60,'Medellín') from dual;
+
+--------------------------------------------------------------
+
+--9.--Crear un procedimiento llamado "calcular_fletes", el cual seleccionará aquellos envíos donde el campo
+-- "valor del servicio" esté 0 o nullo. Con cada uno de ellos deberá invocar la función creada en el punto anterior
+-- y con el valor retornado, deberá llenar el campo "valor del servicio".
+
+
+CREATE OR REPLACE PROCEDURE calcular_fletes  IS
+p_real ENVIOS.PESO_REAL%type;
+p_volumen ENVIOS.PESO_VOLUMEN%type;
+destino ENVIOS.ID_MUNICIPIO_DESTINO%type;
+cod_envio ENVIOS.ID%type;
+resultado integer;
+ 
+CURSOR envio IS select ID, PESO_REAL, PESO_VOLUMEN,ID_MUNICIPIO_DESTINO from envios where valor_servicio = 0 and ROWNUM <=100;
+ 
+ BEGIN 
+   OPEN envio;
+   LOOP
+   FETCH envio INTO cod_envio,p_real,p_volumen,destino;
+   EXIT WHEN envio%notfound;
+        ---procedimiento insertar detalles_programacion---
+         
+      resultado:=  Calcular_Tarifa_Peso(p_real,p_volumen,destino);
+      DBMS_OUTPUT.PUT_line('resultado es: '||resultado);
+      IF resultado = -1 then
+         DBMS_OUTPUT.PUT_line('No se encontrò el destino asociado a un centro de recibo');
+      elsif resultado = -2 then
+       DBMS_OUTPUT.PUT_line('Error no se pudo calcular el registro de valor del servicio');
+      else 
+         update envios set valor_servicio=resultado where ID=cod_envio;
+      end if;
+        
+     END LOOP;
+      CLOSE envio;
+    EXCEPTION 
+     WHEN NO_DATA_FOUND THEN 
+        DBMS_OUTPUT.PUT_line('No se encontrò ningun detalle de asociado al id de mantenimiento ingresado');
+     WHEN OTHERS THEN
+      DBMS_OUTPUT.PUT_line('Error no se pudo insertar el registro');
+ END; 
+
+
+exec calcular_fletes;
+
+--------------------------------------------------------------------------------------------------------
+
+--10 Usted escribirá una función llamada CALCULAR_CAJAS_NECESARIAS que determine si un número de items 
+--pueden ser despachados y el número de cajas necesarias para empacar los items. 
+--Hay 2 tamaños de cajas: grandes que pueden almacenar hasta 5 artículos y pequeñas que pueden almacenar solamente 1 item.
+--Un pedido no se puede despachar cuando se cumpla una de dos condiciones, que no alcancen las cajas para almacenar 
+--los items o que una caja grande no tenga su aforo completo, es decir, si tengo 4 items y solamente 1 caja grande, 
+--no podría despacharla porque la caja no está llena en su totalidad. Usted deberá crear una función que reciba 3 parámetros 
+--en el siguiente orden: número de items, cantidad de cajas grandes disponibles y cantidad de cajas pequeñas disponibles. 
+--La función retornará un número, si el pedido no se puede despachar, deberá retornar -1, de lo contrario, 
+--deberá retornar el número de cajas grandes y pequeñas utilizadas para el despacho. Ejemplos: Items: 16 Cajas Grandes: 
+--5 Cajas Pequeñas: 10 En este caso deberá retornar 4, ya que son 3 cajas grandes (5*3 = 15) y 1 pequeña. Items: 14 Cajas grandes: 
+--10 Cajas pequeñas: 1 En este caso deberá retornar -1, ya que no hay el número de cajas pequeñas suficientes para empacar los 4 
+--artículos restantes. Nota: Siempre las cajas grandes tienen prioridad sobre las pequeñas. Es decir si tengo 6 items y 1 caja grande 
+--y 10 pequeñas, debo utilizar 2 cajas.
+
+
+create or replace PROCEDURE calcular_cajas_necesarias(num_items integer, cajas_grandes integer, cajas_pequenas integer)as
+
+activador_caja_grande integer := 0;
+activador_caja_pequena integer := 0;
+diferencia integer;
+diferencia2 integer;
+multiplo integer;
+empacado_grande integer;
+empacado_pequeno integer;
+contador_g integer;
+contador_p integer;
+resto integer;
+cajas_usadas integer;
+
+BEGIN
+
+
+FOR i IN 1..num_items LOOP
+
+multiplo := 5 * i;
+
+if multiplo <= num_items THEN
+
+
+contador_g := i;
+
+END IF;
+
+END LOOP;
+
+empacado_grande := 5 *contador_g;
+DBMS_OUTPUT.PUT_line('Cantidad cajas grandes usadas ' ||contador_g);
+
+
+resto := num_items - empacado_grande;
+DBMS_OUTPUT.PUT_line('Diferencia ' ||resto);
+
+if contador_g > cajas_grandes then
+
+
+diferencia := contador_g - cajas_grandes;
+DBMS_OUTPUT.PUT_line('faltan cajas grandes para empacar items ' ||diferencia);
+
+else 
+activador_caja_grande := 1;
+diferencia := cajas_grandes- contador_g;
+DBMS_OUTPUT.PUT_line('sobraron cajas grandes: ' ||diferencia);
+
+end if;
+
+if resto > cajas_pequenas then
+
+diferencia2 :=resto  - cajas_pequenas;
+DBMS_OUTPUT.PUT_line('faltan cajas pequeñas para empacar items ' ||diferencia2);
+
+else 
+activador_caja_pequena :=1;
+diferencia2 := cajas_pequenas - resto;
+contador_p :=cajas_pequenas- diferencia2 ;
+DBMS_OUTPUT.PUT_line('sobraron cajas pequeñas: ' ||diferencia2);
+DBMS_OUTPUT.PUT_line('cajas pequeñas usadas: ' ||contador_p);
+
+end if ;
+
+if activador_caja_grande = 1 and activador_caja_pequena = 1 then
+
+DBMS_OUTPUT.PUT_line('se puede despachar');
+
+else 
+
+DBMS_OUTPUT.PUT_line('NO se puede despachar');
+
+END IF;
+
+cajas_usadas := contador_p + contador_g;
+DBMS_OUTPUT.PUT_line('cantidad cajas usadas: ' ||cajas_usadas);
+  
+END;
+
+EXEC calcular_cajas_necesarias(16,5,10);
+-------------------------------------------------------------------
